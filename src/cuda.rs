@@ -26,18 +26,21 @@ impl CudaContext {
         self.conv_layer = &cnn.conv_layer;
         self.output_layer = &cnn.output_layer;
         
+        // CODE SNIPPETS GRABBED FROM RUSTACUDA GIT
         // Load the module containing the function we want to call
+        // The module is the object / compiled chunk of code that can call kernel functions
         let module_data = CString::new(include_str!("../kernel/kernel.ptx"))?;
         let module = Module::load_from_string(&module_data)?;
         self.module = module;
         // Get the first device
         let device = Device::get_device(0)?;
 
-          // Create a stream to submit work to
+        //The stream is a sequence of work actions
+        // Create a stream to submit work to
         let stream = Stream::new(StreamFlags::NON_BLOCKING, None)?;
 
         self.stream = stream;
-
+        // the context is the execution environment (memory segments) allocated for the kernel
             // Create a context associated to this device
         let context = Context::create_and_push(
                 ContextFlags::MAP_HOST | ContextFlags::SCHED_AUTO, device)?;
@@ -45,19 +48,24 @@ impl CudaContext {
 
         return Ok(self)
     }
-    pub fn convolution_layer(input: &InputMatrix, conv_filters: &ConvLayer, outputs: &mut ConvOutput){
-
-    }
-    pub fn relu_layer(conv_out: &mut ConvOutput){
-
-    }
-    pub fn output_layer(input: &ConvOutput, weights: &OutputLayer, output: &mut OutputVec){
-
-    }
+    
 
     pub fn compute(&mut self, input: &InputMatrix) -> Result<OutputVec, Box<dyn Error>> {
         
-        let mut conv_output = ConvOutput([[[0.0; CONV_OUT_DIM]; CONV_OUT_DIM]; CONV_LAYER_SIZE]);
-        let mut output = OutputVec([0.0; OUT_LAYER_SIZE]);
+        //create 10 cuda threads to run in parallel
+        //each thread takes in a different filter 
+        //filters are taken from self.conv_layer
+        //preforms convolution, relu and output 
+        //each neuron writes its output to a specific memory chunk
+         
+        let mut input_gpu = DeviceBuffer::from_slice(&input);
+
+
+        let mut filter_gpu = &self.conv_layer;
+        let mut output_gpu = &self.output_layer;
+
+        unsafe{
+            
+        }
     }
 }
