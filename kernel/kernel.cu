@@ -2,7 +2,7 @@
 
 #include <stdio.h>
 
-extern "C" __global__ void convolve (
+extern "C" __global__ void convolute (
   const float * input,
   const float * filter,
   float * convolute_output,
@@ -62,7 +62,6 @@ extern "C" __global__ void relu (
   const float * convolute_output,
   float * relu_output,
   int convolute_width,
-  int output_width
 ) {
   int x = blockIdx.x * blockDim.x + threadIdx.x;
   int y = blockIdx.y * blockDim.y + threadIdx.y;

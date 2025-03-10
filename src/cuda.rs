@@ -58,14 +58,61 @@ impl CudaContext {
         //preforms convolution, relu and output 
         //each neuron writes its output to a specific memory chunk
          
-        let mut input_gpu = DeviceBuffer::from_slice(&input);
+        let mut input_gpu = DeviceBox::from_slice(&input);
 
 
         let mut filter_gpu = &self.conv_layer;
+        let mut convolution_output_gpu = DeviceBox::new(ConvOutput);
         let mut output_gpu = &self.output_layer;
+        //call convolution layer
+        let block_size = BlockSize::xyz(20, 20, 1);
 
+        let grid_size = (1, 1, 10);
         unsafe{
-            
+            launch!(self.module.convolute<<<grid_size, block_size>>> (
+                    input_gpu.as_device_ptr(),
+                    filter_gpu.as_device_ptr(),
+                    convolute_output_gpu.as_device_ptr();
+                    100,
+                    5,
+                    20
+                )
+
+            )
         }
+        stream.synchronize()?;
+        //call relu layer
+        let mut relu_output = DeviceBox::new(ConvOutput);
+
+        let block_size = BlockSize::xyz(20, 20, 1);
+        let grid_size = (1, 1, 10);
+        unsafe(
+            launch!(
+                self.module.relu<<<grid_size, block_size>>> (
+                    convolute_output_gpu.as_device_ptr(),
+                    relu_output.as_device_ptr(),
+                    20
+                )
+            )
+        )
+        stream.synchronize()?;
+        let output_weights_gpu = DeviceBox::from_slice(&self.output_layer);
+        let output_layer_gpu = DeviceBox::new(OutputVec);
+        //call output layer
+        unsafe(
+            launch!(
+                self.module.output<<<grid_size, block_size>>> (
+                    relu_output.as_device_ptr(),
+                    output_weights_gpu.as_device_ptr(),
+                    output_layer_gpu.as_device_ptr(),
+                    4000
+                )
+            )
+        )
+        stream.synchronize()?;
+
+        let mut output_layer = vec![];
+        output_layer_gpu.copy_to(&mut output_layer)?;
+        return output_layer;
     }
 }
