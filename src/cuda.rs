@@ -21,32 +21,47 @@ pub struct CudaContext {
 
 impl CudaContext {
     pub fn init(cnn: &Cnn) -> Result<Self, Box<dyn Error>> {
-        rustacuda::init(CudaFlags::empty())?;
-        // TODO: add error handling for initialization
-        self.conv_layer = &cnn.conv_layer;
-        self.output_layer = &cnn.output_layer;
         
+        rustacuda::init(CudaFlags::empty())?;
+    
+    
+        // Get the first device
+        let device = Device::get_device(0)?;
         // CODE SNIPPETS GRABBED FROM RUSTACUDA GIT
         // Load the module containing the function we want to call
         // The module is the object / compiled chunk of code that can call kernel functions
+        let context = Context::create_and_push(
+            ContextFlags::MAP_HOST | ContextFlags::SCHED_AUTO, device)?;
+
+        
         let module_data = CString::new(include_str!("../kernel/kernel.ptx"))?;
+        
         let module = Module::load_from_string(&module_data)?;
-        self.module = module;
-        // Get the first device
-        let device = Device::get_device(0)?;
+    
+        
 
         //The stream is a sequence of work actions
         // Create a stream to submit work to
         let stream = Stream::new(StreamFlags::NON_BLOCKING, None)?;
-
-        self.stream = stream;
+        
         // the context is the execution environment (memory segments) allocated for the kernel
             // Create a context associated to this device
-        let context = Context::create_and_push(
-                ContextFlags::MAP_HOST | ContextFlags::SCHED_AUTO, device)?;
-        self._context = context;
+            // TODO: add error handling for initialization
+        let conv_layer = DeviceBox::new(&cnn.conv_layer);
+        let output_layer = DeviceBox::new(&cnn.output_layer);
+        
+        
+            
+        let cudaContext = CudaContext {
+            conv_layer: conv_layer.unwrap(),
+            output_layer: output_layer.unwrap(),
+            module,
+            stream,
+            _context: context,
+        };
+    
 
-        return Ok(self)
+        return Ok(cudaContext)
     }
     
 
@@ -58,61 +73,67 @@ impl CudaContext {
         //preforms convolution, relu and output 
         //each neuron writes its output to a specific memory chunk
          
-        let mut input_gpu = DeviceBox::from_slice(&input);
+        let mut input_gpu = DeviceBox::new(input)?;
 
 
-        let mut filter_gpu = &self.conv_layer;
-        let mut convolution_output_gpu = DeviceBox::new(ConvOutput);
+        let mut convolute_output_cpu = ConvOutput([[[0.0; CONV_OUT_DIM]; CONV_OUT_DIM]; CONV_LAYER_SIZE]);
+        let mut convolute_output_gpu = DeviceBox::new(&convolute_output_cpu)?;
         let mut output_gpu = &self.output_layer;
         //call convolution layer
         let block_size = BlockSize::xyz(20, 20, 1);
 
         let grid_size = (1, 1, 10);
+        let module = &self.module;
+        let stream = &self.stream;
         unsafe{
-            launch!(self.module.convolute<<<grid_size, block_size>>> (
+            launch!(module.convolute<<<grid_size, block_size, 0, stream>>> (
                     input_gpu.as_device_ptr(),
-                    filter_gpu.as_device_ptr(),
-                    convolute_output_gpu.as_device_ptr();
+                    self.conv_layer.as_device_ptr(),
+                    convolute_output_gpu.as_device_ptr(),
                     100,
                     5,
                     20
                 )
-
-            )
+            )?
         }
-        stream.synchronize()?;
+        self.stream.synchronize()?;
+
+        
         //call relu layer
-        let mut relu_output = DeviceBox::new(ConvOutput);
+        let mut relu_output_cpu = ConvOutput([[[0.0; CONV_OUT_DIM]; CONV_OUT_DIM]; CONV_LAYER_SIZE]);
+        let mut relu_output_gpu = DeviceBox::new(&relu_output_cpu)?;
 
         let block_size = BlockSize::xyz(20, 20, 1);
         let grid_size = (1, 1, 10);
-        unsafe(
+        unsafe{
             launch!(
-                self.module.relu<<<grid_size, block_size>>> (
+                module.relu<<<grid_size, &block_size, 0, stream>>> (
                     convolute_output_gpu.as_device_ptr(),
-                    relu_output.as_device_ptr(),
+                    relu_output_gpu.as_device_ptr(),
                     20
                 )
-            )
-        )
-        stream.synchronize()?;
-        let output_weights_gpu = DeviceBox::from_slice(&self.output_layer);
-        let output_layer_gpu = DeviceBox::new(OutputVec);
+            )?
+        }
+        self.stream.synchronize()?;
+    
+        let mut output_layer_cpu = OutputVec([0.0; OUT_LAYER_SIZE]);
+        let mut output_layer_gpu = DeviceBox::new(&output_layer_cpu)?;
+        
         //call output layer
-        unsafe(
+        unsafe{
             launch!(
-                self.module.output<<<grid_size, block_size>>> (
-                    relu_output.as_device_ptr(),
-                    output_weights_gpu.as_device_ptr(),
+                module.output<<<grid_size, &block_size, 0, stream>>> (
+                    relu_output_gpu.as_device_ptr(),
+                    self.output_layer.as_device_ptr(),
                     output_layer_gpu.as_device_ptr(),
                     4000
                 )
-            )
-        )
-        stream.synchronize()?;
+            )?
+        }
+        self.stream.synchronize()?;
 
-        let mut output_layer = vec![];
+        let mut output_layer = OutputVec([0.0; OUT_LAYER_SIZE]);
         output_layer_gpu.copy_to(&mut output_layer)?;
-        return output_layer;
+        return Ok(output_layer);
     }
 }

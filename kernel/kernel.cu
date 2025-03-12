@@ -31,7 +31,7 @@ extern "C" __global__ void convolute (
 
   float sum = 0;
   for(int fy = 0; fy < filter_width; fy++) {
-    for(int fx = 0; fx < filter.width; fx++) {
+    for(int fx = 0; fx < filter_width; fx++) {
       // input dimensions are 
       // 100 x 100 x 1
       // from offset - offset + 24 where offset is the number of threads and there are offsets from 0 - 399, 
@@ -45,7 +45,7 @@ extern "C" __global__ void convolute (
 
       int offset = fx + fy * filter_width;
 
-      int thread_number = y * convolulte_width + x;
+      int thread_number = y * convolute_width + x;
       int input_index = (thread_number * filter_width * filter_width) + offset;
 
       int filter_index = z * (filter_width * filter_width) + offset;
@@ -53,7 +53,7 @@ extern "C" __global__ void convolute (
     }
   }
 
-  int convolute_index = (convolulte_width * convolute_width) * z + (convolute_width * y) + x
+  int convolute_index = (convolute_width * convolute_width) * z + (convolute_width * y) + x;
   convolute_output[convolute_index] = sum;
 
 }
@@ -61,7 +61,7 @@ extern "C" __global__ void convolute (
 extern "C" __global__ void relu (
   const float * convolute_output,
   float * relu_output,
-  int convolute_width,
+  int convolute_width
 ) {
   int x = blockIdx.x * blockDim.x + threadIdx.x;
   int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -69,7 +69,7 @@ extern "C" __global__ void relu (
 
   for(int i = 0; i < convolute_width; i++) {
     for(int j = 0; j < convolute_width; j++) {
-      int index = z * (convolulte_width * convolulte_width) + y * (convolulte_width) + x;
+      int index = z * (convolute_width * convolute_width) + y * (convolute_width) + x;
       if(convolute_output[index] < 0) {
         relu_output[index] = 0;
       }
@@ -94,7 +94,7 @@ extern "C" __global__ void output (
 
   float sum = 0;
   for(int i = 0; i < flatten_width; i++) {
-    int weights_index = (flatten_width) * z + i; 
+    int weight_index = (flatten_width) * z + i; 
     sum += weights[weight_index] * relu_output[i];
   }
 
