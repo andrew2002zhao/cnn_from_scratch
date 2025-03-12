@@ -138,6 +138,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             work_time += now.elapsed().as_micros();  // end time
             Ok(output)
         },
+        
     )?;
 
     println!("{} microseconds of actual work done", work_time);

@@ -3,9 +3,9 @@
 #include <stdio.h>
 
 extern "C" __global__ void convolute (
-  const float * input,
-  const float * filter,
-  float * convolute_output,
+  const double * input,
+  const double * filter,
+  double * convolute_output,
   int input_width,
   int filter_width,
   int convolute_width
@@ -18,7 +18,7 @@ extern "C" __global__ void convolute (
   int x = blockIdx.x * blockDim.x + threadIdx.x;
   int y = blockIdx.y * blockDim.y + threadIdx.y;
   int z = blockIdx.z * blockDim.z + threadIdx.z;
-
+  
 
   //need to determine which thread im on
   // there should be 20 x 20 threads per each output node
@@ -29,7 +29,7 @@ extern "C" __global__ void convolute (
   //
 
 
-  float sum = 0;
+  double sum = 0;
   for(int fy = 0; fy < filter_width; fy++) {
     for(int fx = 0; fx < filter_width; fx++) {
       // input dimensions are 
@@ -44,55 +44,83 @@ extern "C" __global__ void convolute (
 
 
       int offset = fx + fy * filter_width;
+      int convolute_offset = fx + fy * input_width;
+      //  500  * y + 5 * x
+      int thread_position = y * input_width * filter_width + x * filter_width;
+    
+      int input_index = thread_position + convolute_offset;
 
-      int thread_number = y * convolute_width + x;
-      int input_index = (thread_number * filter_width * filter_width) + offset;
 
+      //input for thread 1 should be 
+      //  0 -   4 
+      //100 - 104
+      //200 - 204
+      //300 - 304
+      //400 - 404
+
+      //input for thread 2 should be
+      //  5 -   9
+      //105 - 109
+      //205 - 209
+      //305 - 309
+      //405 - 409
+      
+      //input for thread 21 sohuld be 
+      // 500 - 504
+      // 600 - 604
+      // 700 - 704
+      // 800 - 804
+      // 900 - 904
+      
       int filter_index = z * (filter_width * filter_width) + offset;
+      // printf("input_index %d input_value %f \n" , input_index , input[input_index]);
+    
       sum += input[input_index] * filter[filter_index];
+      // printf("x: %d y: %d z: %d, fx: %d, fy: %d input_array_position: %d filter_position: %d \n", x, y, z, fx, fy, input_index, filter_index);
     }
   }
 
   int convolute_index = (convolute_width * convolute_width) * z + (convolute_width * y) + x;
   convolute_output[convolute_index] = sum;
+  // printf("x: %d y: %d z: %d convolute_output_position %d \n", x, y, z, convolute_index);
+  
 
 }
 
 extern "C" __global__ void relu (
-  const float * convolute_output,
-  float * relu_output,
+  const double * convolute_output,
+  double * relu_output,
   int convolute_width
 ) {
   int x = blockIdx.x * blockDim.x + threadIdx.x;
   int y = blockIdx.y * blockDim.y + threadIdx.y;
   int z = blockIdx.z * blockDim.z + threadIdx.z;
 
-  for(int i = 0; i < convolute_width; i++) {
-    for(int j = 0; j < convolute_width; j++) {
-      int index = z * (convolute_width * convolute_width) + y * (convolute_width) + x;
-      if(convolute_output[index] < 0) {
-        relu_output[index] = 0;
-      }
-      else{
-        relu_output[index] = convolute_output[index];
-      }
-      
-    }
+
+  int index = z * (convolute_width * convolute_width) + y * (convolute_width) + x;
+  if(convolute_output[index] < 0) {
+    relu_output[index] = 0;
   }
+  else{
+    relu_output[index] = convolute_output[index];
+  }
+      
+    
+  
 }
 
 
 extern "C" __global__ void output (
-  const float * relu_output,
-  const float * weights,
-  float * output,
+  const double * relu_output,
+  const double * weights,
+  double * output,
   int flatten_width
 ) {
   int x = blockIdx.x * blockDim.x + threadIdx.x;
   int y = blockIdx.y * blockDim.y + threadIdx.y;
   int z = blockIdx.z * blockDim.z + threadIdx.z;
 
-  float sum = 0;
+  double sum = 0;
   for(int i = 0; i < flatten_width; i++) {
     int weight_index = (flatten_width) * z + i; 
     sum += weights[weight_index] * relu_output[i];
