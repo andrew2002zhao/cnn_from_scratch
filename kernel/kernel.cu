@@ -2,6 +2,85 @@
 
 #include <stdio.h>
 
+//100x100x10 threads
+extern "C" __global__ void convolute_dot_product (
+  //100x100x1
+  const double * input,
+  //5x5x10
+  const double * filter,
+  //100x100x10
+  double * output,
+  int input_width,
+  int filter_width
+) {
+  //x -> 0 - 100
+  int x = blockIdx.x * blockDim.x + threadIdx.x;
+  //y -> 0 - 100
+  int y = blockIdx.y * blockDim.y + threadIdx.y;
+  //z -> 0 - 10
+  int z = blockIdx.z * blockDim.z + threadIdx.z;
+
+  int input_index = (y * input_width) + x;
+  int output_index = (input_width * input_width) * z + input_index; 
+  int filter_x = x % 5;
+  int filter_y = y % 5;
+  int filter_index = (filter_width * filter_width) * z + (filter_width * (y % 5)) + x % 5;
+
+  output[output_index] = input[input_index] * filter[filter_index];
+}
+
+//20 x 100 x 10
+extern "C" __global__ void convolute_sum_25_to_5 (
+  const double * input, 
+  double * output, 
+  int input_width,
+  int convolute_width,
+  int filter_width
+  
+) {
+  //x -> 0 - 20
+  int x = blockIdx.x * blockDim.x + threadIdx.x;
+  //y -> 0 - 100
+  int y = blockIdx.y * blockDim.y + threadIdx.y;
+  //z -> 0 - 10
+  int z = blockIdx.z * blockDim.z + threadIdx.z;
+  
+  int start_index = z * (input_width * input_width) + y * input_width + x * convolute_width;
+  int output_index = z * (convolute_width * input_width) + y * convolute_width + x;
+  double sum = 0;
+  for(int i = 0; i < filter_width; i++) {
+    // sum += input[start_index + i];
+  }
+  output[output_index] = sum;
+}
+
+//20 x 20 x 10
+extern "C" __global__ void convolute_sum_5_to_1 (
+  const double * input,
+  double * output,
+  int input_width,
+  int convolute_width,
+  int filter_width
+) {
+  //x -> 0 - 20
+  int x = blockIdx.x * blockDim.x + threadIdx.x;
+  //y -> 0 - 20
+  int y = blockIdx.y * blockDim.y + threadIdx.y;
+  //z -> 0 - 10
+  int z = blockIdx.z * blockDim.z + threadIdx.z;
+  
+  int start_index = z * (input_width * convolute_width) + y * convolute_width + x;
+
+  int output_index = z * (convolute_width * convolute_width) + y * convolute_width + x;
+  double sum = 0.0;
+  for(int i = 0; i < filter_width * convolute_width; i+=convolute_width) {
+    sum += input[start_index + i];
+  }
+  output[output_index] = sum;
+
+}
+
+
 extern "C" __global__ void convolute (
   const double * input,
   const double * filter,
@@ -79,12 +158,9 @@ extern "C" __global__ void convolute (
       // printf("x: %d y: %d z: %d, fx: %d, fy: %d input_array_position: %d filter_position: %d \n", x, y, z, fx, fy, input_index, filter_index);
     }
   }
-
   int convolute_index = (convolute_width * convolute_width) * z + (convolute_width * y) + x;
   convolute_output[convolute_index] = sum;
   // printf("x: %d y: %d z: %d convolute_output_position %d \n", x, y, z, convolute_index);
-  
-
 }
 
 extern "C" __global__ void relu (

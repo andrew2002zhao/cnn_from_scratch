@@ -18,6 +18,10 @@ pub const OUT_LAYER_SIZE: usize = 10;
 #[repr(transparent)]
 pub struct InputMatrix(pub [[f64; INPUT_DIM]; INPUT_DIM]);
 #[repr(transparent)]
+pub struct ConvDot(pub [[[f64; INPUT_DIM]; INPUT_DIM]; CONV_LAYER_SIZE]);
+#[repr(transparent)]
+pub struct Conv25to5(pub [[[f64; CONV_OUT_DIM]; INPUT_DIM]; CONV_LAYER_SIZE]);
+#[repr(transparent)]
 pub struct ConvLayer(pub [[[f64; FILTER_DIM]; FILTER_DIM]; CONV_LAYER_SIZE]);
 #[repr(transparent)]
 // Each convolution filter generates a 20x20 output filter matrix, and there are 10 in total.
@@ -38,7 +42,10 @@ pub struct Cnn {
 // Since Rust arrays are guaranteed to have row-major memory layout, this trait is safe to
 // implement and we can rely on the ordering of elements inside CUDA code.
 unsafe impl DeviceCopy for InputMatrix {}
+unsafe impl DeviceCopy for Conv25to5 {}
+unsafe impl DeviceCopy for ConvDot {}
 unsafe impl DeviceCopy for ConvLayer {}
 unsafe impl DeviceCopy for ConvOutput {}
 unsafe impl DeviceCopy for OutputLayer {}
 unsafe impl DeviceCopy for OutputVec {}
+

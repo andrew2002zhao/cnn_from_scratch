@@ -67,6 +67,8 @@ impl CudaContext {
 
     pub fn compute(&mut self, input: &InputMatrix) -> Result<OutputVec, Box<dyn Error>> {
         
+        let module = &self.module;
+        let stream = &self.stream;
         //create 10 cuda threads to run in parallel
         //each thread takes in a different filter 
         //filters are taken from self.conv_layer
@@ -74,19 +76,54 @@ impl CudaContext {
         //each neuron writes its output to a specific memory chunk
          
         let mut input_gpu = DeviceBox::new(input)?;
+        // let mut input_conv_dot_cpu = ConvDot([[[0.0; INPUT_DIM]; INPUT_DIM]; CONV_LAYER_SIZE]);
+        // let mut input_conv_dot_gpu = DeviceBox::new(&input_conv_dot_cpu)?;
+        // unsafe{
+        //     launch!(module.convolute_dot_product<<<100000 / 256, 256, 0, stream>>> (
+        //         input_gpu.as_device_ptr(),
+        //         self.conv_layer.as_device_ptr(),
+        //         input_conv_dot_gpu.as_device_ptr(),
+        //         100,
+        //         5
+        //     ))?
+        // }
+        // self.stream.synchronize()?;
 
+        // let mut input_25_to_5_cpu =  Conv25to5([[[0.0; CONV_OUT_DIM]; INPUT_DIM]; CONV_LAYER_SIZE]);
+        // let mut input_25_to_5_gpu = DeviceBox::new(&input_25_to_5_cpu)?;
+        // unsafe{
+        //     launch!(module.convolute_sum_25_to_5<<<20000 / 256, 256, 0, stream>>> (
+        //         input_conv_dot_gpu.as_device_ptr(),
+        //         input_25_to_5_gpu.as_device_ptr(),
+        //         100,
+        //         20,
+        //         5
+        //     ))?
+        // }
+        // self.stream.synchronize()?;
 
         let mut convolute_output_cpu = ConvOutput([[[0.0; CONV_OUT_DIM]; CONV_OUT_DIM]; CONV_LAYER_SIZE]);
         let mut convolute_output_gpu = DeviceBox::new(&convolute_output_cpu)?;
-        let mut output_gpu = &self.output_layer;
-        //call convolution layer
-        let block_size = BlockSize::xyz(20, 20, 1);
 
-        let grid_size = (1, 1, 10);
-        let module = &self.module;
-        let stream = &self.stream;
+        // unsafe{
+        //     launch!(module.convolute_sum_5_to_1<<<4000 / 256, 256, 0, stream>>> (
+        //         input_25_to_5_gpu.as_device_ptr(),
+        //         convolute_output_gpu.as_device_ptr(),
+        //         100,
+        //         20,
+        //         5
+        //     ))?
+        // }
+        // self.stream.synchronize()?;
+        // 
+        // let mut convolute_output_cpu = ConvOutput([[[0.0; CONV_OUT_DIM]; CONV_OUT_DIM]; CONV_LAYER_SIZE]);
+        // let mut convolute_output_gpu = DeviceBox::new(&convolute_output_cpu)?;
+        // let mut output_gpu = &self.output_layer;
+        //call convolution layer
+    
+        
         unsafe{
-            launch!(module.convolute<<<grid_size, block_size, 0, stream>>> (
+            launch!(module.convolute<<<4000/512, 512, 0, stream>>> (
                     input_gpu.as_device_ptr(),
                     self.conv_layer.as_device_ptr(),
                     convolute_output_gpu.as_device_ptr(),
@@ -96,6 +133,7 @@ impl CudaContext {
                 )
             )?
         }
+        
         self.stream.synchronize()?;
 
         
