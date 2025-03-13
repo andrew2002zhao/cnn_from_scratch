@@ -110,10 +110,6 @@ extern "C" __global__ void output_mul (
   if(index >= max_width){
     return;
   }
-  int channel = index / flatten_width; // 0 - 9
-  int spatial_idx = index % 400;      // 0-399
-
-  int relu_index = spatial_idx + channel * flatten_width;  
   
   output[index] = weights[index] * relu_output[index % 4000];
 }
