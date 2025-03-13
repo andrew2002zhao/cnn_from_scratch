@@ -3,82 +3,6 @@
 #include <stdio.h>
 
 //100x100x10 threads
-extern "C" __global__ void convolute_dot_product (
-  //100x100x1
-  const double * input,
-  //5x5x10
-  const double * filter,
-  //100x100x10
-  double * output,
-  int input_width,
-  int filter_width
-) {
-  //x -> 0 - 100
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  //y -> 0 - 100
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  //z -> 0 - 10
-  int z = blockIdx.z * blockDim.z + threadIdx.z;
-
-  int input_index = (y * input_width) + x;
-  int output_index = (input_width * input_width) * z + input_index; 
-  int filter_x = x % 5;
-  int filter_y = y % 5;
-  int filter_index = (filter_width * filter_width) * z + (filter_width * (y % 5)) + x % 5;
-
-  output[output_index] = input[input_index] * filter[filter_index];
-}
-
-//20 x 100 x 10
-extern "C" __global__ void convolute_sum_25_to_5 (
-  const double * input, 
-  double * output, 
-  int input_width,
-  int convolute_width,
-  int filter_width
-  
-) {
-  //x -> 0 - 20
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  //y -> 0 - 100
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  //z -> 0 - 10
-  int z = blockIdx.z * blockDim.z + threadIdx.z;
-  
-  int start_index = z * (input_width * input_width) + y * input_width + x * convolute_width;
-  int output_index = z * (convolute_width * input_width) + y * convolute_width + x;
-  double sum = 0;
-  for(int i = 0; i < filter_width; i++) {
-    // sum += input[start_index + i];
-  }
-  output[output_index] = sum;
-}
-
-//20 x 20 x 10
-extern "C" __global__ void convolute_sum_5_to_1 (
-  const double * input,
-  double * output,
-  int input_width,
-  int convolute_width,
-  int filter_width
-) {
-  //x -> 0 - 20
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  //y -> 0 - 20
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  //z -> 0 - 10
-  int z = blockIdx.z * blockDim.z + threadIdx.z;
-  
-  int start_index = z * (input_width * convolute_width) + y * convolute_width + x;
-
-  int output_index = z * (convolute_width * convolute_width) + y * convolute_width + x;
-  double sum = 0.0;
-  for(int i = 0; i < filter_width * convolute_width; i+=convolute_width) {
-    sum += input[start_index + i];
-  }
-  output[output_index] = sum;
-
-}
 
 
 extern "C" __global__ void convolute (
@@ -87,7 +11,8 @@ extern "C" __global__ void convolute (
   double * convolute_output,
   int input_width,
   int filter_width,
-  int convolute_width
+  int convolute_width,
+  int max_width
 ) {
 
   //dot product between filter and input
@@ -98,7 +23,9 @@ extern "C" __global__ void convolute (
   int y = blockIdx.y * blockDim.y + threadIdx.y;
   int z = blockIdx.z * blockDim.z + threadIdx.z;
   
-
+  if(z * convolute_width * convolute_width + y * convolute_width + x >= max_width) {
+    return;
+  }
   //need to determine which thread im on
   // there should be 20 x 20 threads per each output node
   // the input is 100 x 100 x 1
@@ -159,49 +86,57 @@ extern "C" __global__ void convolute (
     }
   }
   int convolute_index = (convolute_width * convolute_width) * z + (convolute_width * y) + x;
+  if(sum < 0) {
+    sum = 0;
+  }
   convolute_output[convolute_index] = sum;
+
   // printf("x: %d y: %d z: %d convolute_output_position %d \n", x, y, z, convolute_index);
 }
 
-extern "C" __global__ void relu (
-  const double * convolute_output,
-  double * relu_output,
-  int convolute_width
-) {
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  int z = blockIdx.z * blockDim.z + threadIdx.z;
 
 
-  int index = z * (convolute_width * convolute_width) + y * (convolute_width) + x;
-  if(convolute_output[index] < 0) {
-    relu_output[index] = 0;
-  }
-  else{
-    relu_output[index] = convolute_output[index];
-  }
-      
-    
-  
-}
-
-
-extern "C" __global__ void output (
+extern "C" __global__ void output_mul (
   const double * relu_output,
   const double * weights,
   double * output,
+  int max_width,
   int flatten_width
 ) {
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  int z = blockIdx.z * blockDim.z + threadIdx.z;
 
-  double sum = 0;
-  for(int i = 0; i < flatten_width; i++) {
-    int weight_index = (flatten_width) * z + i; 
-    sum += weights[weight_index] * relu_output[i];
+  int index = blockIdx.x * blockDim.x + threadIdx.x;
+  
+  
+  if(index >= max_width){
+    return;
+  }
+  int channel = index / flatten_width; // 0 - 9
+  int spatial_idx = index % 400;      // 0-399
+
+  int relu_index = spatial_idx + channel * flatten_width;  
+  
+  output[index] = weights[index] * relu_output[index % 4000];
+}
+
+extern "C" __global__ void output_add  (
+  const double * input,
+  double * output,
+  int max_width,
+  int size_to_add
+) {
+  int index = blockIdx.x * blockDim.x + threadIdx.x;
+
+  if(index >= max_width) {
+    return;
   }
 
-  output[z] = sum;
-
+  int input_index = index * size_to_add;
+  double sum = 0;
+  for(int i = 0; i < size_to_add; i++) {
+    
+    sum += input[input_index + i];
+  }
+  // printf("size to add %d sum %f \n", size_to_add, sum);
+  output[index] = sum;
 }
+

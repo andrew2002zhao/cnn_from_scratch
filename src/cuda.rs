@@ -76,102 +76,92 @@ impl CudaContext {
         //each neuron writes its output to a specific memory chunk
          
         let mut input_gpu = DeviceBox::new(input)?;
-        // let mut input_conv_dot_cpu = ConvDot([[[0.0; INPUT_DIM]; INPUT_DIM]; CONV_LAYER_SIZE]);
-        // let mut input_conv_dot_gpu = DeviceBox::new(&input_conv_dot_cpu)?;
-        // unsafe{
-        //     launch!(module.convolute_dot_product<<<100000 / 256, 256, 0, stream>>> (
-        //         input_gpu.as_device_ptr(),
-        //         self.conv_layer.as_device_ptr(),
-        //         input_conv_dot_gpu.as_device_ptr(),
-        //         100,
-        //         5
-        //     ))?
-        // }
-        // self.stream.synchronize()?;
-
-        // let mut input_25_to_5_cpu =  Conv25to5([[[0.0; CONV_OUT_DIM]; INPUT_DIM]; CONV_LAYER_SIZE]);
-        // let mut input_25_to_5_gpu = DeviceBox::new(&input_25_to_5_cpu)?;
-        // unsafe{
-        //     launch!(module.convolute_sum_25_to_5<<<20000 / 256, 256, 0, stream>>> (
-        //         input_conv_dot_gpu.as_device_ptr(),
-        //         input_25_to_5_gpu.as_device_ptr(),
-        //         100,
-        //         20,
-        //         5
-        //     ))?
-        // }
-        // self.stream.synchronize()?;
-
+        
+        // 
         let mut convolute_output_cpu = ConvOutput([[[0.0; CONV_OUT_DIM]; CONV_OUT_DIM]; CONV_LAYER_SIZE]);
         let mut convolute_output_gpu = DeviceBox::new(&convolute_output_cpu)?;
-
-        // unsafe{
-        //     launch!(module.convolute_sum_5_to_1<<<4000 / 256, 256, 0, stream>>> (
-        //         input_25_to_5_gpu.as_device_ptr(),
-        //         convolute_output_gpu.as_device_ptr(),
-        //         100,
-        //         20,
-        //         5
-        //     ))?
-        // }
-        // self.stream.synchronize()?;
-        // 
-        // let mut convolute_output_cpu = ConvOutput([[[0.0; CONV_OUT_DIM]; CONV_OUT_DIM]; CONV_LAYER_SIZE]);
-        // let mut convolute_output_gpu = DeviceBox::new(&convolute_output_cpu)?;
-        // let mut output_gpu = &self.output_layer;
-        //call convolution layer
-
-        let block_size = BlockSize::xyz(20, 20, 1);
-        let grid_size = (1, 1, 10);
-    
+        // call convolution layer
+// 
+        // let block_size = BlockSize::xyz(20, 20, 1);
+        // let grid_size = (1, 1, 10);
+        
+        let grid_size = (1, 1, 10); // (16, 16, 10)
+        let block_size = BlockSize::xyz(20, 20, 1); // Match output_dim
         
         unsafe{
-            launch!(module.convolute<<<grid_size, 256, 0, stream>>> (
+            launch!(module.convolute<<<grid_size, &block_size, 0, stream>>> (
                     input_gpu.as_device_ptr(),
                     self.conv_layer.as_device_ptr(),
                     convolute_output_gpu.as_device_ptr(),
                     100,
                     5,
-                    20
-                )
-            )?
-        }
-        
-        self.stream.synchronize()?;
-
-        
-        //call relu layer
-        let mut relu_output_cpu = ConvOutput([[[0.0; CONV_OUT_DIM]; CONV_OUT_DIM]; CONV_LAYER_SIZE]);
-        let mut relu_output_gpu = DeviceBox::new(&relu_output_cpu)?;
-
-        let block_size = BlockSize::xyz(20, 20, 1);
-        let grid_size = (1, 1, 10);
-        unsafe{
-            launch!(
-                module.relu<<<grid_size, &block_size, 0, stream>>> (
-                    convolute_output_gpu.as_device_ptr(),
-                    relu_output_gpu.as_device_ptr(),
-                    20
-                )
-            )?
-        }
-        self.stream.synchronize()?;
-    
-        let mut output_layer_cpu = OutputVec([0.0; OUT_LAYER_SIZE]);
-        let mut output_layer_gpu = DeviceBox::new(&output_layer_cpu)?;
-        
-        //call output layer
-        unsafe{
-            launch!(
-                module.output<<<grid_size, &block_size, 0, stream>>> (
-                    relu_output_gpu.as_device_ptr(),
-                    self.output_layer.as_device_ptr(),
-                    output_layer_gpu.as_device_ptr(),
+                    20,
                     4000
                 )
             )?
         }
-        self.stream.synchronize()?;
+        
+        stream.synchronize()?;
+    
+        
+
+        let block_size = 4;
+        let grid_size = 40000 / block_size;
+
+        let mut output_mul_cpu = OutputLayer([[0.0; OUT_NEURON_DIM]; OUT_LAYER_SIZE]);
+        let mut output_mul_gpu = DeviceBox::new(&output_mul_cpu)?;
+        
+        //call output layer
+        unsafe{
+            launch!(
+                module.output_mul<<<grid_size, block_size, 0, stream>>> (
+                    convolute_output_gpu.as_device_ptr(),
+                    self.output_layer.as_device_ptr(),
+                    output_mul_gpu.as_device_ptr(),
+                    40000,
+                    4000
+                )
+            )?
+        }
+        stream.synchronize()?;
+
+
+        let mut output_step_1_cpu = OutputIntVec([0.0; OUT_INT_SIZE]);
+        let mut output_step_1_gpu = DeviceBox::new(&output_step_1_cpu)?;
+
+        let block_size = 256;
+        let grid_size = (1000 + 256 - 1) / 256;
+        
+    
+        unsafe{
+            launch!(
+                module.output_add<<<grid_size, block_size, 0, stream>>> (
+                    output_mul_gpu.as_device_ptr(),
+                    output_step_1_gpu.as_device_ptr(),
+                    1000,
+                    40
+                )
+            )?
+        }
+        stream.synchronize()?;
+        let block_size = 256;
+        let grid_size = 1;
+
+        let mut output_layer_cpu = OutputVec([0.0; OUT_LAYER_SIZE]);
+        let mut output_layer_gpu = DeviceBox::new(&output_layer_cpu)?;
+
+        
+        unsafe{
+            launch!(
+                module.output_add<<<grid_size, block_size, 0, stream>>> (
+                    output_step_1_gpu.as_device_ptr(),
+                    output_layer_gpu.as_device_ptr(),
+                    10,
+                    100
+                )
+            )?
+        }
+        stream.synchronize()?;
 
         let mut output_layer = OutputVec([0.0; OUT_LAYER_SIZE]);
         output_layer_gpu.copy_to(&mut output_layer)?;
