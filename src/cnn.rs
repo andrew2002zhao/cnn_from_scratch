@@ -11,7 +11,8 @@ pub const FILTER_DIM: usize = 5; // should be factor of INPUT_DIM
 pub const CONV_OUT_DIM: usize = INPUT_DIM / FILTER_DIM;
 pub const CONV_LAYER_SIZE: usize = 10;
 pub const OUT_NEURON_DIM: usize = CONV_OUT_DIM * CONV_OUT_DIM * CONV_LAYER_SIZE;
-pub const OUT_INT_SIZE: usize = 1000;
+pub const OUT_INT_1_SIZE: usize = 1000;
+pub const OUT_INT_2_SIZE: usize = 100;
 pub const OUT_LAYER_SIZE: usize = 10;
 
 // Use repr(transparent) so the types have same memory layout as arrays
@@ -28,7 +29,10 @@ pub struct OutputLayer(pub [[f64; OUT_NEURON_DIM]; OUT_LAYER_SIZE]);
 
 // Intemediate Addition Step
 #[repr(transparent)]
-pub struct OutputIntVec(pub [f64; OUT_INT_SIZE]);
+pub struct OutputInt1Vec(pub [f64; OUT_INT_1_SIZE]);
+
+#[repr(transparent)]
+pub struct OutputInt2Vec(pub [f64; OUT_INT_2_SIZE]);
 
 // Each of the 10 output layer neurons generate 1 number
 #[repr(transparent)]
@@ -47,6 +51,7 @@ unsafe impl DeviceCopy for InputMatrix {}
 unsafe impl DeviceCopy for ConvLayer {}
 unsafe impl DeviceCopy for ConvOutput {}
 unsafe impl DeviceCopy for OutputLayer {}
-unsafe impl DeviceCopy for OutputIntVec {}
+unsafe impl DeviceCopy for OutputInt1Vec {}
+unsafe impl DeviceCopy for OutputInt2Vec {}
 unsafe impl DeviceCopy for OutputVec {}
 

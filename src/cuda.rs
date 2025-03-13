@@ -126,7 +126,7 @@ impl CudaContext {
         stream.synchronize()?;
 
 
-        let mut output_step_1_cpu = OutputIntVec([0.0; OUT_INT_SIZE]);
+        let mut output_step_1_cpu = OutputInt1Vec([0.0; OUT_INT_1_SIZE]);
         let mut output_step_1_gpu = DeviceBox::new(&output_step_1_cpu)?;
 
         let block_size = 256;
@@ -147,6 +147,22 @@ impl CudaContext {
         let block_size = 256;
         let grid_size = 1;
 
+        let mut output_step_2_cpu = OutputInt2Vec([0.0; OUT_INT_2_SIZE]);
+        let mut output_step_2_gpu = DeviceBox::new(&output_step_2_cpu)?;
+
+        unsafe{
+            launch!(
+                module.output_add<<<grid_size, block_size, 0, stream>>> (
+                    output_step_1_gpu.as_device_ptr(),
+                    output_step_2_gpu.as_device_ptr(),
+                    100,
+                    10
+                )
+            )?
+        }
+        stream.synchronize()?;
+
+
         let mut output_layer_cpu = OutputVec([0.0; OUT_LAYER_SIZE]);
         let mut output_layer_gpu = DeviceBox::new(&output_layer_cpu)?;
 
@@ -154,10 +170,10 @@ impl CudaContext {
         unsafe{
             launch!(
                 module.output_add<<<grid_size, block_size, 0, stream>>> (
-                    output_step_1_gpu.as_device_ptr(),
+                    output_step_2_gpu.as_device_ptr(),
                     output_layer_gpu.as_device_ptr(),
                     10,
-                    100
+                    10
                 )
             )?
         }
