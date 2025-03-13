@@ -120,10 +120,13 @@ impl CudaContext {
         // let mut convolute_output_gpu = DeviceBox::new(&convolute_output_cpu)?;
         // let mut output_gpu = &self.output_layer;
         //call convolution layer
+
+        let block_size = BlockSize::xyz(20, 20, 1);
+        let grid_size = (1, 1, 10);
     
         
         unsafe{
-            launch!(module.convolute<<<4000/512, 512, 0, stream>>> (
+            launch!(module.convolute<<<grid_size, 256, 0, stream>>> (
                     input_gpu.as_device_ptr(),
                     self.conv_layer.as_device_ptr(),
                     convolute_output_gpu.as_device_ptr(),
